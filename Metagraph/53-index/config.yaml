@@ -1,0 +1,4 @@
+batch_list: "0-batch_list.txt"
+fname_dir_path: "1-HQ-661k-collection/fnames_lists"
+threads: 8
+m: 60

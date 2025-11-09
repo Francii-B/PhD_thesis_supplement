@@ -1,0 +1,5 @@
+batch_list: "0-batch_list.txt"
+query_list: "0-query_list.txt"
+min_threshold: "0.4"
+n_threads: "4"
+index_type: "fur" #Set either "fur" or "mfur" for chosing the specific index variant (Fulgor and meta-Fulgor respectively)

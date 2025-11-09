@@ -1,0 +1,116 @@
+import os
+
+configfile: "config.yaml"
+
+#setup of the directories
+[os.makedirs(x, exist_ok=True) for x in ["1-metagraph_batches/benchmarks"]]
+
+#get batch list
+def get_batches():
+    with open(config["batch_list"]) as fin:
+        return list(sorted(filter(len, map(str.strip, fin))))
+
+batches = get_batches()
+
+print(f"Batches:")
+[print(batch, end= "\t") for batch in batches]
+
+##################################
+## Index by batch
+##################################
+
+rule batch_index:
+    input:
+        expand("1-metagraph_batches/{batch}-relaxed.row_diff_brwt.annodbg", batch=batches)
+
+rule batch_metagraph_relax_brwt:
+    priority: 4
+    input:
+        "1-metagraph_batches/{batch}/{batch}.row_diff_brwt.annodbg"
+    output:
+        "1-metagraph_batches/{batch}-relaxed.row_diff_brwt.annodbg"
+    threads:
+        int(config["threads"])
+    params:
+        int(config["m"]) 
+    shell:
+        '''
+        metagraph relax_brwt -v -p {threads} -o 1-metagraph_batches/{wildcards.batch}-relaxed \
+                               --mem-cap-gb {params} --relax-arity 32 --disk-swap 1-metagraph_batches/temp-{wildcards.batch}  {input}
+        '''
+
+
+rule batch_metagraph_anno_transform_brwt:
+    priority: 3
+    input:
+        dbg = "1-metagraph_batches/{batch}.dbg",
+        annot = "1-metagraph_batches/{batch}/{batch}.row_diff.annodbg"
+    output:
+        temp("1-metagraph_batches/{batch}/{batch}.row_diff_brwt.annodbg")
+    threads:
+        int(config["threads"])
+    params:
+        int(config["m"]) 
+    shell:
+        '''
+        find 1-metagraph_batches/{wildcards.batch}/ -name "{wildcards.batch}.row_diff.annodbg" | metagraph transform_anno -v -p {threads} --anno-type row_diff_brwt \
+                                     -i {input.dbg} \
+                                     --mem-cap-gb {params} --greedy --disk-swap 1-metagraph_batches/temp-{wildcards.batch} -o {output}
+        '''
+
+rule batch_metagraph_anno_transform:
+    priority: 2
+    input:
+        dbg = "1-metagraph_batches/{batch}.dbg",
+        annot = "1-metagraph_batches/{batch}/{batch}.column.annodbg"
+    output:
+        temp("1-metagraph_batches/{batch}/{batch}.row_diff.annodbg")
+    params:
+        int(config["m"])   
+    threads:
+        int(config["threads"])
+    shell:
+        '''
+        find 1-metagraph_batches/{wildcards.batch}/ -name "{wildcards.batch}.column.annodbg" | metagraph transform_anno -v -p {threads} --anno-type row_diff --row-diff-stage 0 \
+                                     -i {input.dbg} \
+                                     --mem-cap-gb {params} --disk-swap 1-metagraph_batches/temp-{wildcards.batch} -o {output}
+        find 1-metagraph_batches/{wildcards.batch}/ -name "{wildcards.batch}.column.annodbg" | metagraph transform_anno -v -p {threads} --anno-type row_diff --row-diff-stage 1 \
+                                    -i {input.dbg} \
+                                    --mem-cap-gb {params} --disk-swap 1-metagraph_batches/temp-{wildcards.batch} -o {output}
+        find 1-metagraph_batches/{wildcards.batch}/ -name "{wildcards.batch}.column.annodbg" | metagraph transform_anno -v -p {threads} --anno-type row_diff --row-diff-stage 2 \
+                                    -i {input.dbg} \
+                                    --mem-cap-gb {params} --disk-swap 1-metagraph_batches/temp-{wildcards.batch} -o {output}
+        '''
+
+rule batch_metagraph_annotation:
+    input:
+        "1-metagraph_batches/{batch}.dbg"
+    output:
+        temp("1-metagraph_batches/{batch}/{batch}.column.annodbg")
+    threads:
+        int(config["threads"])
+    shell:
+        '''
+        mkdir -p 1-metagraph_batches/{wildcards.batch}
+        cat 1-metagraph_batches/fnames_lists/{wildcards.batch}-fname.txt | metagraph annotate -i {input} \
+                             --anno-filename -o 1-metagraph_batches/{wildcards.batch}/{wildcards.batch} \
+                             -p {threads} --threads-each 5 --disk-swap 1-metagraph_batches/temp-{wildcards.batch} \
+                             -v
+        '''
+
+rule batch_metagraph_dbg:
+    input:
+        "1-metagraph_batches/fnames_lists/{batch}-fname.txt"
+    output:
+       "1-metagraph_batches/{batch}.dbg"
+    params:
+        int(config["m"])    
+    threads:
+        int(config["threads"])
+    shell:
+        '''
+        mkdir -p 1-metagraph_batches/temp-{wildcards.batch}
+        cat {input} | metagraph build -k 31 -v -p {threads} --graph succinct \
+                          --mem-cap-gb {params} -o 1-metagraph_batches/{wildcards.batch} \
+                          --disk-swap 1-metagraph_batches/temp-{wildcards.batch} --state small
+        '''

@@ -1,0 +1,68 @@
+import os
+
+configfile: "config.yaml"
+
+#setup of the directories
+[os.makedirs(x, exist_ok=True) for x in ["1-intermediate", "benchmarks"]]
+
+#get query file list
+def get_queryf():
+    with open(config["query_list"]) as fin:
+        return list(sorted(filter(len, map(str.strip, fin))))
+
+query_f = get_queryf()
+
+#get batch list
+def get_batches():
+    with open(config["batch_list"]) as fin:
+        return list(sorted(filter(len, map(str.strip, fin))))
+
+batches = get_batches()
+
+#print the lists
+print(f"Query files:")
+[print(qfile) for qfile in query_f]
+
+print(f"Batches:")
+[print(batch) for batch in batches]
+
+INDEX_TYPE = config['index_type'] #fur or mfur
+
+##################################
+## Fulgor: matches above threshold
+##################################
+
+rule min_threshold:
+    input:
+        expand("1-intermediate/{qfile}--{file}_min_threshold.txt",  qfile=query_f, file=batches)
+
+rule query_min_threshold:
+    input:
+        index = "0-index/{file}." + INDEX_TYPE, 
+        query = "0-query/{qfile}"
+    output:
+        "1-intermediate/{qfile}--{file}_min_threshold.txt"
+    log:
+        "log/1-{qfile}--{file}.log"
+    params:
+        min_threshold = config["min_threshold"],
+    threads:
+        int(config["n_threads"])
+    shell:
+        '''
+        galitime -n "query {wildcards.qfile} vs {wildcards.file}" -l benchmarks/1-query-{wildcards.qfile}--{wildcards.file}.txt \
+                     "./ffulgor pseudoalign -i {input.index} -q {input.query} -o {output}  \
+                                           --threshold {params.min_threshold} -t {threads} > {log}"           
+        '''
+
+rule index_decompression:
+    input:
+        "0-index/{file}." + INDEX_TYPE +".xz"
+    output:
+        "0-index/{file}." + INDEX_TYPE
+    threads:
+        int(config["n_threads"])
+    shell:
+        '''
+        galitime -n "decompression {wildcards.file}" -l benchmarks/0-decompression-{wildcards.file}.txt  "xz --decompress -k {input}"
+        '''

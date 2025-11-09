@@ -1,0 +1,13 @@
+#--- Batch infos ---
+#Paths should not contain "/" at the end
+batch_list: "0-ATB_batches.txt"                              # list of batches to be processed
+asms_batch_dir: "0-ATB_asms_dir"  # dir where the corresponding batches (asms) are located
+input_filename_lists: "3-ATB-HQ/filename_lists"               # dir containing .txt files for each batch, listing the corresponding asms in a specific order (e.g. lexicographic)
+output_dir: "3-ATB-HQ"                                        # dir where the output indexes will be placed
+
+#--- General setting
+direct_mfur: 1                # build Fulgor and mFulgor indexes using a single command (1) or using two distinct commands (0) 
+n_threads: 8                  # threads used for each rule
+k: 31                         # k-mer lenght
+m: 20                         # Minimizer lenght
+g: 50                         # RAM limit in GiB

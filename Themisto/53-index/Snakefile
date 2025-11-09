@@ -1,0 +1,58 @@
+import os
+
+configfile: "config.yaml"
+
+#setup of the directories
+[os.makedirs(x, exist_ok=True) for x in ["1-themisto_batches/stats",
+                                         "1-themisto_batches/benchmarks"]]
+
+#get batch list
+def get_batches():
+    with open(config["batch_list"]) as fin:
+        return list(sorted(filter(len, map(str.strip, fin))))
+
+batches = get_batches()
+
+print(f"Batches:")
+[print(batch, end= "\t") for batch in batches]
+
+# Define the index type
+INDEX_TYPE = config['index_type']
+
+
+##################################
+## Index by batch
+##################################
+
+rule batch_index:
+    input:
+        expand("1-themisto_batches/stats/{batch}-{index_type}.stats", batch=batches, index_type = INDEX_TYPE)
+
+rule batch_stats:
+    input:
+        "1-themisto_batches/{batch}-{index_type}.tdbg"
+    output:
+        "1-themisto_batches/stats/{batch}-{index_type}.stats"
+    shell:
+        '''
+        ./themisto stats -i 1-themisto_batches/{wildcards.batch}-{INDEX_TYPE} \
+                         --unitigs --temp-dir 1-themisto_batches/temp_{wildcards.batch}-{INDEX_TYPE} > {output}
+        '''
+
+rule batch_themisto:
+    input:
+        "1-themisto_batches/fnames_lists/{batch}-fname.txt"
+   output:
+       "1-themisto_batches/{batch}-{index_type}.tdbg"
+    threads:
+        int(config["n_threads"])
+   params:
+        M = int(config["m"]),
+        D = int(config["d"])
+    shell:
+        '''
+        mkdir -p 1-themisto_batches/temp_{wildcards.batch}
+        ./themisto build -k 31 -i {input} \
+                         -o 1-themisto_batches/{wildcards.batch}-{INDEX_TYPE} -s {INDEX_TYPE} \
+                         --temp-dir 1-themisto_batches/temp_{wildcards.batch}--{INDEX_TYPE} --mem-gigas {params.M} -t {threads} -d {params.D} -v
+        '''

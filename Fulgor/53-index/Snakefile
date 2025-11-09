@@ -1,0 +1,125 @@
+import os
+
+configfile: "config.yaml"
+
+##################################
+## Setup
+##################################
+ASMS_DIR = config["asms_batch_dir"]
+FNAME_LIST_DIR = config["input_filename_lists"]
+
+#List of batches to be processed
+with open(config["batch_list"]) as fin:
+        batches = list(sorted(filter(len, map(str.strip, fin))))
+
+#Output dir
+OUT_DIR = config["output_dir"]
+[os.makedirs(x, exist_ok=True) for x in [OUT_DIR,
+                                         os.path.join(OUT_DIR, "stats"),
+                                         os.path.join(OUT_DIR, "benchmark")
+                                         ]]
+#rule order
+if config["direct_mfur"]:
+    ruleorder: batch_mfulgor_direct > batch_fulgor > batch_mfulgor
+
+else:
+    ruleorder: batch_fulgor > batch_mfulgor > batch_mfulgor_direct
+
+##################################
+## Index by batch
+##################################
+
+rule batch_index:
+    input:
+        expand(OUT_DIR + "/stats/{batch}.stats", batch=batches) #fix
+
+rule batch_stats:
+    priority: 3
+    input:
+        OUT_DIR + "/{batch}.mfur"
+    output:
+        OUT_DIR + "/stats/{batch}.stats"
+    shell:
+        '''
+        ./fulgor stats -i {input} > {output}
+        '''
+
+rule batch_mfulgor_direct:
+    priority: 2
+    input:
+        fname_list = FNAME_LIST_DIR + "/{batch}-fname.txt",
+        asms_dir = "./{batch}"
+    output:
+        index = OUT_DIR + "/{batch}.mfur",
+        index_fur = OUT_DIR + "/{batch}.fur",
+        b_out = OUT_DIR + "/benchmark/3-{batch}-mfur_built-direct.txt",
+        tmp_dir = temporary(directory("tmp_{batch}"))
+    threads:
+        int(config["n_threads"])
+    params:
+        out_dir = OUT_DIR,
+        K = int(config["k"]),
+        G = int(config["g"])
+    resources:
+        M =lambda wildcards, attempt: config["m"] - ((attempt-1)*5)
+    shell:
+        '''
+	galitime -n "mFulgor index direct building - {wildcards.batch}" -l {output.b_out} \
+        " ./fulgor build -l {input.fname_list} \
+			 -o {params.out_dir} \
+			 -k {params.K} -m {resources.M} -d {output.tmp_dir} -t {threads} -g {params.G} --verbose --check --meta"
+	'''
+
+rule batch_mfulgor:
+    priority: 2
+    input:
+        OUT_DIR + "/{batch}.fur"
+    output:
+        index = OUT_DIR + "/{batch}.mfur",
+        b_out = OUT_DIR + "/benchmark/2-{batch}-mfur_built.txt",
+        tmp_dir = temporary(directory("tmp_{batch}"))
+    threads:
+        int(config["n_threads"])
+    shell:
+        '''
+        galitime -n "mFulgor index building - {wildcards.batch}" -l {output.b_out} \
+        "./fulgor partition -i {input} -d {output.tmp_dir} -t {threads} --check " 
+        '''
+
+rule batch_fulgor:
+    input:
+        fname_list = FNAME_LIST_DIR + "/{batch}-fname.txt",
+        asms_dir = "./{batch}"
+    output:
+        index = OUT_DIR + "/{batch}.fur",
+        b_out = OUT_DIR + "/benchmark/1-{batch}-fur_built.txt",
+        tmp_dir = temporary(directory("tmp_{batch}"))
+    threads:
+        int(config["n_threads"])
+    params:
+        out_dir = OUT_DIR,
+        K = int(config["k"]),
+        G = int(config["g"])
+    resources:
+        M =lambda wildcards, attempt: config["m"] - ((attempt-1)*5)
+    shell:
+        '''
+	    galitime -n "Fulgor index building - {wildcards.batch}" -l {output.b_out} \
+        " ./fulgor build -l {input.fname_list} \
+			 -o {params.out_dir} \
+			 -k {params.K} -m {resources.M} -d {output.tmp_dir} -t {threads} -g {params.G} --verbose --check"
+	'''
+
+#decompress ASMS batches
+rule asms_batch_decompress:
+    input:
+        ASMS_DIR + "/{batch}.tar.xz"
+    output:
+        asms_dir = temporary(directory("./{batch}")), 
+        b_out = OUT_DIR + "/benchmark/0-{batch}-asms_batch_decompression.txt"
+    threads:
+        int(config["n_threads"])
+    shell:
+        '''
+        galitime -n "ASMS batch decompression - {wildcards.batch}" -l {output.b_out} "tar -xf {input}"
+        '''

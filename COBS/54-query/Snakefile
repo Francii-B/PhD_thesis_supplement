@@ -1,0 +1,65 @@
+import os
+
+configfile: "config.yaml"
+
+#setup of the directories
+[os.makedirs(x, exist_ok=True) for x in ["0-index_tmp", "1-intermediate", "benchmarks"]]
+
+#get query file list
+def get_queryf():
+    with open(config["query_list"]) as fin:
+        return list(sorted(filter(len, map(str.strip, fin))))
+
+query_f = get_queryf()
+
+#get batch list
+def get_batches():
+    with open(config["batch_list"]) as fin:
+        return list(sorted(filter(len, map(str.strip, fin))))
+
+batches = get_batches()
+
+#print the lists
+print(f"Query files:")
+[print(qfile) for qfile in query_f]
+
+print(f"Batches:")
+[print(batch) for batch in batches]
+
+##################################
+## COBS: matches above threshold
+##################################
+
+rule min_threshold:
+    input:
+        expand("1-intermediate/{qfile}--{file}_min_threshold.txt",  qfile=query_f, file=batches)
+
+rule query_min_threshold:
+    priority: 2
+    input:
+        index = "0-index_tmp/{file}.cobs_classic",
+        query = "0-query/{qfile}"
+    output:
+        "1-intermediate/{qfile}--{file}_min_threshold.txt"
+    params:
+        min_threshold = config["min_threshold"],
+    threads:
+        int(config["n_threads"])
+    shell:
+        '''
+        galitime -n "query {wildcards.qfile} vs {wildcards.file}" -l benchmarks/1-query-{wildcards.qfile}--{wildcards.file}.txt \
+                     "cobs query -i {input.index} -f {input.query} -t {params.min_threshold} -T {threads} --load-complete  > {output}"
+        '''
+
+rule index_decompression:
+    input:
+        "0-index/{file}.cobs_classic.xz"
+    output:
+        temp("0-index_tmp/{file}.cobs_classic")
+    threads:
+        int(config["n_threads"])
+    shell:
+        '''
+        galitime -n "decompression {wildcards.file}" -l benchmarks/0-decompression-{wildcards.file}.txt  "xz --decompress -kc {input} > {output}"
+        '''
+

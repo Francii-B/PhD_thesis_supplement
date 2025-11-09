@@ -1,0 +1,77 @@
+import os
+
+configfile: "config.yaml"
+
+#setup of the directories
+[os.makedirs(x, exist_ok=True) for x in ["1-intermediate", "benchmarks"]]
+
+#get query file list
+def get_queryf():
+    with open(config["query_list"]) as fin:
+        return list(sorted(filter(len, map(str.strip, fin))))
+
+query_f = get_queryf()
+
+#get batch list
+def get_batches():
+    with open(config["batch_list"]) as fin:
+        return list(sorted(filter(len, map(str.strip, fin))))
+
+batches = get_batches()
+
+#print the lists
+print(f"Query files:")
+[print(qfile) for qfile in query_f]
+
+print(f"Batches:")
+[print(batch) for batch in batches]
+
+
+##################################
+## Metagraph: matches above threshold
+##################################
+
+rule min_threshold:
+    input:
+        expand("1-intermediate/{qfile}--{file}_min_threshold.txt", qfile=query_f, file=batches)
+
+rule query_min_threshold:
+    priority: 2
+    input:
+        graph = "0-index/{file}.dbg",
+        colors = "0-index/{file}-relaxed.row_diff_brwt.annodbg",
+        query = "0-query/{qfile}"
+    output:
+        "1-intermediate/{qfile}--{file}_min_threshold.txt"
+    threads:
+        int(config["n_threads"])
+    params:
+        min_threshold = config["min_threshold"]
+    shell:
+        '''
+        galitime -n "query {wildcards.qfile} vs {wildcards.file}" -l benchmarks/1-query-{wildcards.qfile}--{wildcards.file}.txt \
+        "metagraph query -i {input.graph} -a {input.colors} --count-labels \
+                        --discovery-fraction {params.min_threshold} -p {threads} --fwd-and-reverse \
+                        {input.query} > {output}"
+        '''
+
+
+rule graph_decompression:
+    input:
+        "0-index/{file}.dbg.xz"
+    output:
+       "0-index/{file}.dbg"
+    shell:
+        '''
+        galitime -n "dbg decompression {wildcards.file}" -l benchmarks/0-dbg_decompression-{wildcards.file}.txt  "xz --decompress -k {input}"
+        '''
+
+rule colors_decompression:
+    input:
+        "0-index/{file}-relaxed.row_diff_brwt.annodbg.xz"
+    output:
+       "0-index/{file}-relaxed.row_diff_brwt.annodbg"
+    shell:
+        '''
+        galitime -n "color decompression {wildcards.file}" -l benchmarks/0-color_decompression-{wildcards.file}.txt  "xz --decompress -k {input}"
+        '''
