@@ -1,6 +1,7 @@
 # PhD thesis supplement material
-This repository contains all scripts described in my PhD thesis. Prefix numbers correspond to the thesis sections in which these scripts are mentioned:
+This repository contains all queries and scripts described in my PhD thesis. Prefix numbers correspond to the thesis sections in which these scripts are mentioned. The following list provides a detailed overview of the repository contents:
 
+ - ```query```: Contains the query files used in the experiments.
  - ```COBS/```,```Fulgor/```,```Themisto/```,```Metagraph/```
     - ```53-index```: Snakemake workflow for building the indexes.
     - ```54-query```: Snakemake workflow for performing *k*-mer matching.
